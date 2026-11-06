@@ -1,0 +1,342 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Login | TrustVault</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f1f5fb;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container {
+            display: flex;
+            width: 900px;
+            max-width: 100%;
+            min-height: 530px;
+            background: white;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 15px 45px rgba(23,59,103,0.12);
+        }
+
+        .login-left {
+            flex: 1;
+            background: #173b67;
+            color: white;
+            padding: 55px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .login-left h1 {
+            font-size: 34px;
+            margin-bottom: 20px;
+        }
+
+        .login-left p {
+            color: #d5e2f1;
+            line-height: 1.8;
+            font-size: 15px;
+        }
+
+        .security-icon {
+            font-size: 65px;
+            margin-bottom: 25px;
+        }
+
+        .login-right {
+            flex: 1;
+            padding: 55px 45px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .logo {
+            color: #173b67;
+            font-size: 25px;
+            font-weight: 800;
+            margin-bottom: 35px;
+        }
+
+        .logo span {
+            color: #2878d0;
+        }
+
+        .login-right h2 {
+            color: #173b67;
+            font-size: 29px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #8795a8;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            color: #344b63;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 9px;
+        }
+
+        input[type="email"],
+        input[type="password"],
+        input[type="text"] {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid #dce4ef;
+            border-radius: 7px;
+            outline: none;
+            font-size: 14px;
+            margin-bottom: 22px;
+        }
+
+        input:focus {
+            border-color: #2878d0;
+            box-shadow: 0 0 0 3px rgba(40,120,208,0.1);
+        }
+
+        .password-wrapper {
+            position: relative;
+        }
+
+        .password-wrapper input {
+            padding-right: 65px;
+        }
+
+        .show-password {
+            position: absolute;
+            right: 12px;
+            top: 13px;
+            border: none;
+            background: none;
+            color: #1769aa;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .remember {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 23px;
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .remember input {
+            accent-color: #1769aa;
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 15px;
+            background: #1769aa;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .login-button:hover {
+            background: #12548c;
+        }
+
+        .register-link {
+            text-align: center;
+            margin-top: 25px;
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .register-link a {
+            color: #1769aa;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .home-link {
+            display: block;
+            text-align: center;
+            margin-top: 18px;
+            color: #64748b;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .flash-messages {
+            margin-bottom: 18px;
+        }
+
+        .flash-message {
+            background: #fff0f0;
+            color: #b42318;
+            border: 1px solid #ffd5d5;
+            padding: 11px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 700px) {
+            .login-container {
+                flex-direction: column;
+            }
+
+            .login-left {
+                padding: 35px;
+            }
+
+            .login-left h1 {
+                font-size: 27px;
+            }
+
+            .login-right {
+                padding: 40px 30px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="login-container">
+
+        <div class="login-left">
+
+            <div class="security-icon">🔐</div>
+
+            <h1>Welcome Back!</h1>
+
+            <p>
+                Your documents deserve a secure home.
+                Sign in to TrustVault to access, manage
+                and organize your important documents.
+            </p>
+
+        </div>
+
+        <div class="login-right">
+
+            <div class="logo">Trust<span>Vault.</span></div>
+
+            <h2>Sign In</h2>
+
+            <p class="subtitle">
+                Enter your account details to continue.
+            </p>
+
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    <div class="flash-messages">
+                        {% for message in messages %}
+                            <div class="flash-message">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="/login">
+
+                <input type="hidden" name="csrf_token"
+                       value="{{ csrf_token() }}">
+
+                <label for="email">Email Address</label>
+
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    placeholder="Enter your email address"
+                    required
+                >
+
+                <label for="password">Password</label>
+
+                <div class="password-wrapper">
+
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        placeholder="Enter your password"
+                        required
+                    >
+
+                    <button
+                        type="button"
+                        class="show-password"
+                        onclick="togglePassword()">
+                        SHOW
+                    </button>
+
+                </div>
+
+                <label class="remember">
+                    <input type="checkbox" name="remember">
+                    Remember me
+                </label>
+
+                <button type="submit" class="login-button">
+                    Sign In →
+                </button>
+
+            </form>
+
+            <p class="register-link">
+                Don't have an account?
+                <a href="/register">Create Account</a>
+            </p>
+
+            <a href="/" class="home-link">
+                ← Back to Home
+            </a>
+
+        </div>
+
+    </div>
+
+    <script>
+        function togglePassword() {
+            const password = document.getElementById("password");
+            const button = document.querySelector(".show-password");
+
+            if (password.type === "password") {
+                password.type = "text";
+                button.textContent = "HIDE";
+            } else {
+                password.type = "password";
+                button.textContent = "SHOW";
+            }
+        }
+    </script>
+
+</body>
+</html>

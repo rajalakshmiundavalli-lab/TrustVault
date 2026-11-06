@@ -1,0 +1,339 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Create Account | TrustVault</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f1f5fb;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+        }
+
+        .register-container {
+            display: flex;
+            width: 950px;
+            max-width: 100%;
+            background: white;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 15px 45px rgba(23,59,103,0.12);
+        }
+
+        .register-left {
+            flex: 1;
+            background: #173b67;
+            color: white;
+            padding: 55px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .register-left h1 {
+            font-size: 34px;
+            margin-bottom: 20px;
+        }
+
+        .register-left p {
+            color: #d5e2f1;
+            line-height: 1.8;
+            font-size: 15px;
+        }
+
+        .register-icon {
+            font-size: 65px;
+            margin-bottom: 25px;
+        }
+
+        .register-right {
+            flex: 1;
+            padding: 45px;
+        }
+
+        .logo {
+            color: #173b67;
+            font-size: 25px;
+            font-weight: 800;
+            margin-bottom: 25px;
+        }
+
+        .logo span {
+            color: #2878d0;
+        }
+
+        h2 {
+            color: #173b67;
+            font-size: 29px;
+            margin-bottom: 9px;
+        }
+
+        .subtitle {
+            color: #8795a8;
+            font-size: 14px;
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            color: #344b63;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        input {
+            width: 100%;
+            padding: 13px;
+            border: 1px solid #dce4ef;
+            border-radius: 7px;
+            outline: none;
+            font-size: 14px;
+            margin-bottom: 18px;
+        }
+
+        input:focus {
+            border-color: #2878d0;
+            box-shadow: 0 0 0 3px rgba(40,120,208,0.1);
+        }
+
+        .password-wrapper {
+            position: relative;
+        }
+
+        .password-wrapper input {
+            padding-right: 65px;
+        }
+
+        .show-password {
+            position: absolute;
+            right: 12px;
+            top: 12px;
+            border: none;
+            background: none;
+            color: #1769aa;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .register-button {
+            width: 100%;
+            padding: 15px;
+            background: #1769aa;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+
+        .register-button:hover {
+            background: #12548c;
+        }
+
+        .login-link {
+            text-align: center;
+            margin-top: 22px;
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .login-link a {
+            color: #1769aa;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .home-link {
+            display: block;
+            text-align: center;
+            margin-top: 17px;
+            color: #64748b;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .flash-message {
+            background: #fff0f0;
+            color: #b42318;
+            border: 1px solid #ffd5d5;
+            padding: 11px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 700px) {
+            .register-container {
+                flex-direction: column;
+            }
+
+            .register-left {
+                padding: 35px;
+            }
+
+            .register-right {
+                padding: 35px 25px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="register-container">
+
+        <div class="register-left">
+
+            <div class="register-icon">🛡️</div>
+
+            <h1>Join TrustVault</h1>
+
+            <p>
+                Create your account and experience
+                a simpler way to manage your important
+                documents with secure access and
+                convenient document management.
+            </p>
+
+        </div>
+
+        <div class="register-right">
+
+            <div class="logo">Trust<span>Vault.</span></div>
+
+            <h2>Create Account</h2>
+
+            <p class="subtitle">
+                Fill in your details to get started.
+            </p>
+
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="flash-message">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="/register">
+
+                <input type="hidden" name="csrf_token"
+                       value="{{ csrf_token() }}">
+
+                <label for="full_name">Full Name</label>
+
+                <input
+                    type="text"
+                    id="full_name"
+                    name="full_name"
+                    placeholder="Enter your full name"
+                    required
+                >
+
+                <label for="email">Email Address</label>
+
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    placeholder="Enter your email address"
+                    required
+                >
+
+                <label for="password">Password</label>
+
+                <div class="password-wrapper">
+
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        placeholder="Create a password"
+                        required
+                    >
+
+                    <button
+                        type="button"
+                        class="show-password"
+                        onclick="togglePassword('password', this)">
+                        SHOW
+                    </button>
+
+                </div>
+
+                <label for="confirm_password">Confirm Password</label>
+
+                <div class="password-wrapper">
+
+                    <input
+                        type="password"
+                        id="confirm_password"
+                        name="confirm_password"
+                        placeholder="Confirm your password"
+                        required
+                    >
+
+                    <button
+                        type="button"
+                        class="show-password"
+                        onclick="togglePassword('confirm_password', this)">
+                        SHOW
+                    </button>
+
+                </div>
+
+                <button type="submit" class="register-button">
+                    Create Account →
+                </button>
+
+            </form>
+
+            <p class="login-link">
+                Already have an account?
+                <a href="/login">Sign In</a>
+            </p>
+
+            <a href="/" class="home-link">
+                ← Back to Home
+            </a>
+
+        </div>
+
+    </div>
+
+    <script>
+        function togglePassword(id, button) {
+            const password = document.getElementById(id);
+
+            if (password.type === "password") {
+                password.type = "text";
+                button.textContent = "HIDE";
+            } else {
+                password.type = "password";
+                button.textContent = "SHOW";
+            }
+        }
+    </script>
+
+</body>
+</html>

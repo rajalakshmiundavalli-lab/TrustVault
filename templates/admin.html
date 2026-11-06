@@ -1,0 +1,509 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrustVault | Admin Dashboard</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background: #f4f6fb;
+            color: #17233d;
+        }
+
+        .sidebar {
+            width: 245px;
+            height: 100vh;
+            background: #101d3a;
+            color: white;
+            position: fixed;
+            padding: 30px 20px;
+        }
+
+        .brand {
+            font-size: 25px;
+            font-weight: bold;
+            margin-bottom: 45px;
+        }
+
+        .admin-label {
+            color: #94a9d0;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            padding-left: 12px;
+        }
+
+        .sidebar a {
+            display: block;
+            color: #cbd5e1;
+            text-decoration: none;
+            padding: 14px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .sidebar a:hover,
+        .sidebar a.active {
+            background: #263b65;
+            color: white;
+        }
+
+        .main {
+            margin-left: 245px;
+            padding: 35px;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 35px;
+        }
+
+        .avatar {
+            width: 43px;
+            height: 43px;
+            border-radius: 50%;
+            background: #dce6fa;
+            color: #18366d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .page-title {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #718096;
+            margin-bottom: 30px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 35px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            flex: 1;
+            min-width: 200px;
+            box-shadow: 0 3px 15px rgba(0,0,0,0.04);
+        }
+
+        .stat-card p {
+            color: #718096;
+            margin-bottom: 12px;
+        }
+
+        .stat-card h2 {
+            font-size: 32px;
+            color: #19376d;
+        }
+
+        .section-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 3px 15px rgba(0,0,0,0.04);
+        }
+
+        .section-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 750px;
+        }
+
+        th, td {
+            padding: 16px 12px;
+            text-align: left;
+            border-bottom: 1px solid #edf0f5;
+            font-size: 14px;
+        }
+
+        th {
+            color: #718096;
+            font-size: 12px;
+            text-transform: uppercase;
+            background: #f8faff;
+        }
+
+        td {
+            color: #344b63;
+        }
+
+        tr:hover {
+            background: #f8faff;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .admin-role {
+            background: #e5edff;
+            color: #2456a6;
+        }
+
+        .user-role {
+            background: #e8f7ed;
+            color: #267343;
+        }
+
+        .role-form {
+            display: inline;
+        }
+
+        .role-button {
+            border: none;
+            padding: 9px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .promote-button {
+            background: #19376d;
+            color: white;
+        }
+
+        .demote-button {
+            background: #fff0f0;
+            color: #c03939;
+        }
+
+        .current-account {
+            color: #718096;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .download-link {
+            color: #2456a6;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .download-link:hover {
+            text-decoration: underline;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 25px;
+            color: #718096;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            background: #19376d;
+            color: white;
+        }
+
+        .footer-links .logout {
+            background: #fff0f0;
+            color: #c03939;
+        }
+
+        @media(max-width: 750px) {
+            .sidebar {
+                width: 75px;
+                padding: 20px 8px;
+            }
+
+            .brand {
+                font-size: 14px;
+                margin-bottom: 30px;
+            }
+
+            .admin-label {
+                font-size: 9px;
+                padding-left: 2px;
+            }
+
+            .sidebar a {
+                font-size: 11px;
+                padding: 12px 5px;
+                text-align: center;
+            }
+
+            .main {
+                margin-left: 75px;
+                padding: 20px 12px;
+            }
+
+            .section-card {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="sidebar">
+    <div class="brand">TrustVault.</div>
+
+    <div class="admin-label">Administration</div>
+
+    <a href="/admin" class="active">Admin Dashboard</a>
+    <a href="/dashboard">User Dashboard</a>
+    <a href="/logout">Logout</a>
+</div>
+
+<div class="main">
+
+    <div class="topbar">
+        <div>
+            <h2>Administration Panel</h2>
+            <p style="color:#718096;">Manage users and documents</p>
+        </div>
+
+        <div class="avatar">AD</div>
+    </div>
+
+    <h1 class="page-title">Admin Dashboard</h1>
+
+    <p class="subtitle">
+        Welcome to the TrustVault administration panel.
+    </p>
+
+    <div class="stats">
+
+        <div class="stat-card">
+            <p>Total Registered Users</p>
+            <h2>{{ total_users }}</h2>
+        </div>
+
+        <div class="stat-card">
+            <p>Total Uploaded Documents</p>
+            <h2>{{ total_documents }}</h2>
+        </div>
+
+    </div>
+
+    <!-- USER MANAGEMENT -->
+
+    <div class="section-card">
+
+        <h2 class="section-title">User & Admin Management</h2>
+
+        <div class="table-wrapper">
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Full Name</th>
+                        <th>Email Address</th>
+                        <th>Role</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for user in users %}
+
+                    <tr>
+                        <td>{{ user.id }}</td>
+                        <td>{{ user.full_name }}</td>
+                        <td>{{ user.email }}</td>
+
+                        <td>
+                            {% if user.role == 'admin' %}
+                                <span class="role-badge admin-role">
+                                    Admin
+                                </span>
+                            {% else %}
+                                <span class="role-badge user-role">
+                                    User
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+
+                            {% if user.id != session.get('user_id') %}
+
+                                {% if user.role == 'admin' %}
+
+                                    <form
+                                        class="role-form"
+                                        method="POST"
+                                        action="/admin/manage-user/{{ user.id }}"
+                                        onsubmit="return confirm('Are you sure you want to change this admin into a normal user?');">
+
+                                        <input type="hidden"
+                                               name="csrf_token"
+                                               value="{{ csrf_token() }}">
+
+                                        <input type="hidden"
+                                               name="role"
+                                               value="user">
+
+                                        <button type="submit"
+                                                class="role-button demote-button">
+                                            Make User
+                                        </button>
+                                    </form>
+
+                                {% else %}
+
+                                    <form
+                                        class="role-form"
+                                        method="POST"
+                                        action="/admin/manage-user/{{ user.id }}"
+                                        onsubmit="return confirm('Are you sure you want to promote this user to admin?');">
+
+                                        <input type="hidden"
+                                               name="csrf_token"
+                                               value="{{ csrf_token() }}">
+
+                                        <input type="hidden"
+                                               name="role"
+                                               value="admin">
+
+                                        <button type="submit"
+                                                class="role-button promote-button">
+                                            Promote to Admin
+                                        </button>
+                                    </form>
+
+                                {% endif %}
+
+                            {% else %}
+
+                                <span class="current-account">
+                                    Current Account
+                                </span>
+
+                            {% endif %}
+
+                        </td>
+                    </tr>
+
+                    {% else %}
+
+                    <tr>
+                        <td colspan="5" class="empty">
+                            No users found.
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+
+    <!-- DOCUMENT MANAGEMENT -->
+
+    <div class="section-card">
+
+        <h2 class="section-title">All Uploaded Documents</h2>
+
+        <div class="table-wrapper">
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Document Name</th>
+                        <th>File Name</th>
+                        <th>Uploaded By</th>
+                        <th>Email</th>
+                        <th>Upload Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for document in all_documents %}
+
+                    <tr>
+                        <td>{{ document.id }}</td>
+                        <td>{{ document.document_name }}</td>
+                        <td>{{ document.filename }}</td>
+                        <td>{{ document.full_name }}</td>
+                        <td>{{ document.email }}</td>
+                        <td>{{ document.upload_date }}</td>
+
+                        <td>
+                            <a class="download-link"
+                               href="/admin/download/{{ document.id }}">
+                                Download
+                            </a>
+                        </td>
+                    </tr>
+
+                    {% else %}
+
+                    <tr>
+                        <td colspan="7" class="empty">
+                            No documents uploaded yet.
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+
+    <div class="footer-links">
+        <a href="/dashboard">Back to Dashboard</a>
+        <a href="/logout" class="logout">Logout</a>
+    </div>
+
+</div>
+
+</body>
+</html>
