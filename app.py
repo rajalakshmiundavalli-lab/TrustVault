@@ -991,18 +991,29 @@ def reset_password(token):
         "reset_password.html",
         token=token
     )
-
-
-# Logout
 @app.route("/logout")
 def logout():
-    if session.get("user_id"):
-        log_action("LOGOUT", "User logged out successfully")
+    user_id = session.get("user_id")
 
-    session.clear()
+    try:
+        if user_id:
+            conn = get_db()
+            user = conn.execute(
+                "SELECT id FROM users WHERE id = ?",
+                (user_id,)
+            ).fetchone()
+            conn.close()
+
+            if user:
+                log_action("LOGOUT", "User logged out successfully")
+
+    except sqlite3.Error:
+        pass
+
+    finally:
+        session.clear()
+
     return redirect(url_for("login"))
-
-
 # Initialize database
 create_table()
 
