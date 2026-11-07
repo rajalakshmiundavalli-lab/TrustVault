@@ -668,9 +668,9 @@ def logout():
     session.clear()
 
     return redirect(url_for("login"))
-# Run application
+# Initialize database
+create_table()
+
+# Run application locally
 if __name__ == "__main__":
-
-    create_table()
-
     app.run(debug=True)
