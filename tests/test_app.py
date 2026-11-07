@@ -257,3 +257,44 @@ def test_password_change_rejects_short_password(client):
 
     assert response.status_code == 302
     assert "/change-password" in response.location
+def test_login_creates_audit_log(client):
+    register_user(client)
+    login_user(client)
+
+    conn = trustvault.get_db()
+    log = conn.execute(
+        "SELECT * FROM audit_logs WHERE action = 'LOGIN'"
+    ).fetchone()
+    conn.close()
+
+    assert log is not None
+    assert log["details"] == "User logged in successfully"
+
+
+def test_admin_can_access_audit_logs(client):
+    register_user(client)
+
+    conn = trustvault.get_db()
+    conn.execute(
+        "UPDATE users SET role = 'admin' WHERE email = ?",
+        ("test@example.com",)
+    )
+    conn.commit()
+    conn.close()
+
+    login_user(client)
+
+    response = client.get("/admin/audit-logs")
+
+    assert response.status_code == 200
+    assert b"TrustVault Audit Logs" in response.data
+
+
+def test_normal_user_cannot_access_audit_logs(client):
+    register_user(client)
+    login_user(client)
+
+    response = client.get("/admin/audit-logs")
+
+    assert response.status_code == 403
+    assert b"Access Denied" in response.data

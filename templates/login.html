@@ -250,7 +250,11 @@
             <p class="subtitle">
                 Enter your account details to continue.
             </p>
-
+            {% if error %}
+                <div class="flash-message">
+                   {{ error }}
+                </div>
+            {% endif %}
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
                     <div class="flash-messages">

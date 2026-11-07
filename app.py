@@ -65,6 +65,28 @@ def create_table():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            details TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+def log_action(action, details=""):
+    user_id = session.get("user_id")
+
+    conn = get_db()
+
+    conn.execute("""
+        INSERT INTO audit_logs (user_id, action, details)
+        VALUES (?, ?, ?)
+    """, (user_id, action, details))
 
     conn.commit()
     conn.close()
@@ -127,8 +149,42 @@ def admin_dashboard():
         total_documents=total_documents,
         all_documents=all_documents
     )
+# Admin Audit Logs
+@app.route("/admin/audit-logs")
+def audit_logs():
 
+    if "user_id" not in session:
+        return redirect(url_for("login"))
 
+    conn = get_db()
+
+    user = conn.execute(
+        "SELECT role FROM users WHERE id = ?",
+        (session["user_id"],)
+    ).fetchone()
+
+    if user is None or user["role"] != "admin":
+        conn.close()
+        return "Access Denied: Admins only.", 403
+
+    logs = conn.execute("""
+        SELECT audit_logs.id,
+               audit_logs.action,
+               audit_logs.details,
+               audit_logs.timestamp,
+               users.full_name,
+               users.email
+        FROM audit_logs
+        LEFT JOIN users ON audit_logs.user_id = users.id
+        ORDER BY audit_logs.id DESC
+    """).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "audit_logs.html",
+        logs=logs
+    )
 # Admin Management - Change User Roles
 @app.route("/admin/manage-user/<int:user_id>", methods=["POST"])
 def manage_user(user_id):
@@ -185,7 +241,10 @@ def manage_user(user_id):
 
     conn.commit()
     conn.close()
-
+    log_action(
+        "ROLE_CHANGE",
+        f"Admin changed user ID {user_id} role to {new_role}"
+    )
     return redirect(url_for("admin_dashboard"))
 
 
@@ -264,7 +323,10 @@ def login():
 
             session["user_id"] = user["id"]
             session["user_name"] = user["full_name"]
-
+            log_action(
+                "LOGIN",
+                "User logged in successfully"
+            )
             return redirect(url_for("dashboard"))
 
         return render_template(
@@ -366,6 +428,10 @@ def upload():
 
         conn.commit()
         conn.close()
+        log_action(
+            "UPLOAD",
+            f"Uploaded document: {document_name}"
+        )
 
         return redirect(url_for("documents"))
 
@@ -435,7 +501,10 @@ def download_document(document_id):
 
     if document is None:
         return "Document not found."
-
+    log_action(
+        "DOWNLOAD",
+        f"Downloaded document: {document['document_name']}"
+    )
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         document["filename"],
@@ -470,7 +539,10 @@ def admin_download(document_id):
 
     if document is None:
         return "Document not found.", 404
-
+    log_action(
+        "DOWNLOAD",
+        f"Admin downloaded document: {document['document_name']}"
+    )
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         document["filename"],
@@ -514,7 +586,10 @@ def delete_document(document_id):
 
     conn.commit()
     conn.close()
-
+    log_action(
+        "DELETE",
+        f"Deleted document: {document['document_name']}"
+    )
     return redirect(url_for("documents"))
 
 
@@ -571,7 +646,10 @@ def change_password():
 
         conn.commit()
         conn.close()
-
+        log_action(
+            "PASSWORD_CHANGE",
+            "User changed their password"
+        )
         flash("Password changed successfully!", "success")
         return redirect(url_for("change_password"))
 
@@ -581,11 +659,15 @@ def change_password():
 @app.route("/logout")
 def logout():
 
+    if session.get("user_id"):
+        log_action(
+            "LOGOUT",
+            "User logged out successfully"
+        )
+
     session.clear()
 
     return redirect(url_for("login"))
-
-
 # Run application
 if __name__ == "__main__":
 
