@@ -77,6 +77,13 @@ def create_table():
     """)
 
     conn.commit()
+    admin_email = os.environ.get("TRUSTVAULT_ADMIN_EMAIL", "").strip().lower()
+
+    if admin_email:
+        conn.execute(
+            "UPDATE users SET role = 'admin' WHERE LOWER(email) = ?",
+            (admin_email,)
+        )
     conn.close()
 def log_action(action, details=""):
     user_id = session.get("user_id")
