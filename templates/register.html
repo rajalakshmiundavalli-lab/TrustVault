@@ -4,7 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Create Account | TrustVault</title>
 
     <style>
@@ -170,14 +169,23 @@
             font-size: 13px;
         }
 
-        .flash-message {
-            background: #fff0f0;
-            color: #b42318;
-            border: 1px solid #ffd5d5;
+        .message {
             padding: 11px;
             border-radius: 6px;
             margin-bottom: 15px;
             font-size: 13px;
+        }
+
+        .error-message {
+            background: #fff0f0;
+            color: #b42318;
+            border: 1px solid #ffd5d5;
+        }
+
+        .success-message {
+            background: #ecfdf3;
+            color: #067647;
+            border: 1px solid #abefc6;
         }
 
         @media (max-width: 700px) {
@@ -201,7 +209,6 @@
     <div class="register-container">
 
         <div class="register-left">
-
             <div class="register-icon">🛡️</div>
 
             <h1>Join TrustVault</h1>
@@ -212,7 +219,6 @@
                 documents with secure access and
                 convenient document management.
             </p>
-
         </div>
 
         <div class="register-right">
@@ -225,19 +231,24 @@
                 Fill in your details to get started.
             </p>
 
-            {% with messages = get_flashed_messages() %}
-                {% if messages %}
-                    {% for message in messages %}
-                        <div class="flash-message">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                {% endif %}
+            {% if error %}
+                <div class="message error-message">
+                    {{ error }}
+                </div>
+            {% endif %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="message {% if category == 'success' %}success-message{% else %}error-message{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
             {% endwith %}
 
-            <form method="POST" action="/register">
+            <form method="POST" action="{{ url_for('register') }}">
 
-                <input type="hidden" name="csrf_token"
+                <input type="hidden"
+                       name="csrf_token"
                        value="{{ csrf_token() }}">
 
                 <label for="full_name">Full Name</label>
@@ -247,6 +258,7 @@
                     id="full_name"
                     name="full_name"
                     placeholder="Enter your full name"
+                    autocomplete="name"
                     required
                 >
 
@@ -257,18 +269,20 @@
                     id="email"
                     name="email"
                     placeholder="Enter your email address"
+                    autocomplete="email"
                     required
                 >
 
                 <label for="password">Password</label>
 
                 <div class="password-wrapper">
-
                     <input
                         type="password"
                         id="password"
                         name="password"
                         placeholder="Create a password"
+                        autocomplete="new-password"
+                        minlength="8"
                         required
                     >
 
@@ -278,18 +292,18 @@
                         onclick="togglePassword('password', this)">
                         SHOW
                     </button>
-
                 </div>
 
                 <label for="confirm_password">Confirm Password</label>
 
                 <div class="password-wrapper">
-
                     <input
                         type="password"
                         id="confirm_password"
                         name="confirm_password"
                         placeholder="Confirm your password"
+                        autocomplete="new-password"
+                        minlength="8"
                         required
                     >
 
@@ -299,7 +313,6 @@
                         onclick="togglePassword('confirm_password', this)">
                         SHOW
                     </button>
-
                 </div>
 
                 <button type="submit" class="register-button">
@@ -310,15 +323,14 @@
 
             <p class="login-link">
                 Already have an account?
-                <a href="/login">Sign In</a>
+                <a href="{{ url_for('login') }}">Sign In</a>
             </p>
 
-            <a href="/" class="home-link">
+            <a href="{{ url_for('home') }}" class="home-link">
                 ← Back to Home
             </a>
 
         </div>
-
     </div>
 
     <script>

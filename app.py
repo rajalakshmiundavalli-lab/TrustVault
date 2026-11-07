@@ -1,9 +1,19 @@
 
-from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory, flash
-import sqlite3
 import os
+import re
+import sqlite3
 import uuid
+import secrets
+import hashlib
+import smtplib
+from email.message import EmailMessage
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, send_from_directory, flash
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
@@ -12,7 +22,6 @@ from flask_wtf.csrf import CSRFProtect
 app = Flask(__name__)
 
 app.secret_key = os.environ.get("TRUSTVAULT_SECRET_KEY")
-
 if not app.secret_key:
     raise RuntimeError("TRUSTVAULT_SECRET_KEY is not set!")
 
@@ -23,19 +32,47 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
+DATABASE = os.path.join(app.root_path, "trustvault.db")
+MAIL_SERVER = "smtp.gmail.com"
+MAIL_PORT = 587
+MAIL_USERNAME = os.environ.get("TRUSTVAULT_EMAIL")
+MAIL_PASSWORD = os.environ.get("TRUSTVAULT_EMAIL_PASSWORD")
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "png", "jpg", "jpeg"}
 
 
 # Database connection
 def get_db():
-    conn = sqlite3.connect("trustvault.db")
+    conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
+def send_reset_email(email, reset_link):
+    msg = EmailMessage()
+    msg["Subject"] = "TrustVault - Password Reset"
+    msg["From"] = MAIL_USERNAME
+    msg["To"] = email
 
+    msg.set_content(
+        f"""Hello,
+
+We received a request to reset your TrustVault password.
+
+Use this link within 30 minutes:
+{reset_link}
+
+If you did not request this, ignore this email.
+
+TrustVault Team
+"""
+    )
+
+    with smtplib.SMTP(MAIL_SERVER, MAIL_PORT) as server:
+        server.starttls()
+        server.login(MAIL_USERNAME, MAIL_PASSWORD)
+        server.send_message(msg)
 
 # Create database tables
 def create_table():
-
     conn = get_db()
 
     conn.execute("""
@@ -47,13 +84,16 @@ def create_table():
         )
     """)
 
-    try:
+    columns = [
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(users)").fetchall()
+    ]
+
+    if "role" not in columns:
         conn.execute("""
             ALTER TABLE users
             ADD COLUMN role TEXT NOT NULL DEFAULT 'user'
         """)
-    except sqlite3.OperationalError:
-        pass
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS documents (
@@ -66,6 +106,19 @@ def create_table():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS document_permissions (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           document_id INTEGER NOT NULL,
+           user_id INTEGER NOT NULL,
+           granted_by INTEGER NOT NULL,
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+           UNIQUE(document_id, user_id),
+           FOREIGN KEY (document_id) REFERENCES documents(id),
+           FOREIGN KEY (user_id) REFERENCES users(id),
+           FOREIGN KEY (granted_by) REFERENCES users(id)
+    )
+""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -76,18 +129,35 @@ def create_table():
         )
     """)
 
-    conn.commit()
-    admin_email = os.environ.get("TRUSTVAULT_ADMIN_EMAIL", "").strip().lower()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    # Promote the configured admin account, if it exists.
+    admin_email = os.environ.get(
+        "TRUSTVAULT_ADMIN_EMAIL", ""
+    ).strip().lower()
 
     if admin_email:
         conn.execute(
             "UPDATE users SET role = 'admin' WHERE LOWER(email) = ?",
             (admin_email,)
         )
+
+    conn.commit()
     conn.close()
+
+
+# Audit logging
 def log_action(action, details=""):
     user_id = session.get("user_id")
-
     conn = get_db()
 
     conn.execute("""
@@ -99,167 +169,30 @@ def log_action(action, details=""):
     conn.close()
 
 
-# Home page
+# Admin check
+def is_admin():
+    if "user_id" not in session:
+        return False
+
+    conn = get_db()
+    user = conn.execute(
+        "SELECT role FROM users WHERE id = ?",
+        (session["user_id"],)
+    ).fetchone()
+    conn.close()
+
+    return user is not None and user["role"] == "admin"
+
+
+# Home
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# Admin Dashboard
-@app.route("/admin")
-def admin_dashboard():
-
-    if "user_id" not in session:
-        return redirect(url_for("login"))
-
-    conn = get_db()
-
-    user = conn.execute(
-        "SELECT role FROM users WHERE id = ?",
-        (session["user_id"],)
-    ).fetchone()
-
-    if user is None or user["role"] != "admin":
-        conn.close()
-        return "Access Denied: Admins only.", 403
-
-    users = conn.execute(
-        "SELECT id, full_name, email, role FROM users"
-    ).fetchall()
-
-    total_users = conn.execute(
-        "SELECT COUNT(*) FROM users"
-    ).fetchone()[0]
-
-    total_documents = conn.execute(
-        "SELECT COUNT(*) FROM documents"
-    ).fetchone()[0]
-
-    all_documents = conn.execute("""
-        SELECT documents.id,
-               documents.document_name,
-               documents.filename,
-               documents.upload_date,
-               users.full_name,
-               users.email
-        FROM documents
-        JOIN users ON documents.user_id = users.id
-        ORDER BY documents.upload_date DESC
-    """).fetchall()
-
-    conn.close()
-
-    return render_template(
-        "admin.html",
-        users=users,
-        total_users=total_users,
-        total_documents=total_documents,
-        all_documents=all_documents
-    )
-# Admin Audit Logs
-@app.route("/admin/audit-logs")
-def audit_logs():
-
-    if "user_id" not in session:
-        return redirect(url_for("login"))
-
-    conn = get_db()
-
-    user = conn.execute(
-        "SELECT role FROM users WHERE id = ?",
-        (session["user_id"],)
-    ).fetchone()
-
-    if user is None or user["role"] != "admin":
-        conn.close()
-        return "Access Denied: Admins only.", 403
-
-    logs = conn.execute("""
-        SELECT audit_logs.id,
-               audit_logs.action,
-               audit_logs.details,
-               audit_logs.timestamp,
-               users.full_name,
-               users.email
-        FROM audit_logs
-        LEFT JOIN users ON audit_logs.user_id = users.id
-        ORDER BY audit_logs.id DESC
-    """).fetchall()
-
-    conn.close()
-
-    return render_template(
-        "audit_logs.html",
-        logs=logs
-    )
-# Admin Management - Change User Roles
-@app.route("/admin/manage-user/<int:user_id>", methods=["POST"])
-def manage_user(user_id):
-
-    if "user_id" not in session:
-        return redirect(url_for("login"))
-
-    conn = get_db()
-
-    admin = conn.execute(
-        "SELECT role FROM users WHERE id = ?",
-        (session["user_id"],)
-    ).fetchone()
-
-    if admin is None or admin["role"] != "admin":
-        conn.close()
-        return "Access Denied: Admins only.", 403
-
-    new_role = request.form.get("role")
-
-    if new_role not in ["admin", "user"]:
-        conn.close()
-        return "Invalid role.", 400
-
-    target = conn.execute(
-        "SELECT id, role FROM users WHERE id = ?",
-        (user_id,)
-    ).fetchone()
-
-    if target is None:
-        conn.close()
-        return "User not found.", 404
-
-    # Admin cannot change their own role
-    if user_id == session["user_id"]:
-        conn.close()
-        return "You cannot change your own admin role.", 403
-
-    # Keep at least one admin account
-    if target["role"] == "admin" and new_role == "user":
-
-        admin_count = conn.execute(
-            "SELECT COUNT(*) FROM users WHERE role = 'admin'"
-        ).fetchone()[0]
-
-        if admin_count <= 1:
-            conn.close()
-            return "At least one admin account must remain.", 400
-
-    conn.execute(
-        "UPDATE users SET role = ? WHERE id = ?",
-        (new_role, user_id)
-    )
-
-    conn.commit()
-    conn.close()
-    log_action(
-        "ROLE_CHANGE",
-        f"Admin changed user ID {user_id} role to {new_role}"
-    )
-    return redirect(url_for("admin_dashboard"))
-
-
-
 # Registration
 @app.route("/register", methods=["GET", "POST"])
 def register():
-
     if request.method == "POST":
 
         name = request.form.get("full_name", "").strip()
@@ -273,6 +206,18 @@ def register():
                 error="All fields are required."
             )
 
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            return render_template(
+                "register.html",
+                error="Please enter a valid email address."
+            )
+
+        if len(password) < 8:
+            return render_template(
+                "register.html",
+                error="Password must contain at least 8 characters."
+            )
+
         if password != confirm:
             return render_template(
                 "register.html",
@@ -283,27 +228,26 @@ def register():
             "TRUSTVAULT_ADMIN_EMAIL", ""
         ).strip().lower()
 
-        role = "admin" if email == admin_email and admin_email else "user"
-
-        password_hash = generate_password_hash(password)
+        role = "admin" if admin_email and email == admin_email else "user"
 
         conn = get_db()
 
         try:
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO users
                 (full_name, email, password_hash, role)
                 VALUES (?, ?, ?, ?)
-                """,
-                (name, email, password_hash, role)
-            )
+            """, (
+                name,
+                email,
+                generate_password_hash(password),
+                role
+            ))
 
             conn.commit()
 
         except sqlite3.IntegrityError:
             conn.close()
-
             return render_template(
                 "register.html",
                 error="Email already registered."
@@ -311,6 +255,7 @@ def register():
 
         conn.close()
 
+        flash("Registration successful! Please log in.", "success")
         return redirect(url_for("login"))
 
     return render_template("register.html")
@@ -319,29 +264,26 @@ def register():
 # Login
 @app.route("/login", methods=["GET", "POST"])
 def login():
-
     if request.method == "POST":
 
-        email = request.form.get("email", "").strip()
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
 
         conn = get_db()
-
         user = conn.execute(
-            "SELECT * FROM users WHERE email = ?",
+            "SELECT * FROM users WHERE LOWER(email) = ?",
             (email,)
         ).fetchone()
-
         conn.close()
 
         if user and check_password_hash(user["password_hash"], password):
 
+            session.clear()
             session["user_id"] = user["id"]
             session["user_name"] = user["full_name"]
-            log_action(
-                "LOGIN",
-                "User logged in successfully"
-            )
+            session["role"] = user["role"]
+            log_action("LOGIN", "User logged in successfully")
+
             return redirect(url_for("dashboard"))
 
         return render_template(
@@ -352,10 +294,9 @@ def login():
     return render_template("login.html")
 
 
-# User Dashboard
+# User dashboard
 @app.route("/dashboard")
 def dashboard():
-
     if "user_id" not in session:
         return redirect(url_for("login"))
 
@@ -377,7 +318,6 @@ def dashboard():
     storage_bytes = 0
 
     for document in documents:
-
         file_path = os.path.join(
             app.config["UPLOAD_FOLDER"],
             document["filename"]
@@ -386,41 +326,162 @@ def dashboard():
         if os.path.exists(file_path):
             storage_bytes += os.path.getsize(file_path)
 
-    storage_mb = round(storage_bytes / (1024 * 1024), 2)
-
     return render_template(
         "dashboard.html",
         name=session["user_name"],
         total_documents=total_documents,
-        storage_mb=storage_mb,
-        is_admin=user and user["role"] == "admin"
+        storage_mb=round(storage_bytes / (1024 * 1024), 2),
+        is_admin=user is not None and user["role"] == "admin"
     )
+
+
+# Admin dashboard
+@app.route("/admin")
+def admin_dashboard():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    if not is_admin():
+        return "Access Denied: Admins only.", 403
+
+    conn = get_db()
+
+    users = conn.execute(
+        "SELECT id, full_name, email, role FROM users"
+    ).fetchall()
+
+    total_users = conn.execute(
+        "SELECT COUNT(*) FROM users"
+    ).fetchone()[0]
+
+    total_documents = conn.execute(
+        "SELECT COUNT(*) FROM documents"
+    ).fetchone()[0]
+
+    all_documents = conn.execute("""
+        SELECT documents.id, documents.document_name,
+               documents.filename, documents.upload_date,
+               users.full_name, users.email
+        FROM documents
+        JOIN users ON documents.user_id = users.id
+        ORDER BY documents.upload_date DESC
+    """).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "admin.html",
+        users=users,
+        total_users=total_users,
+        total_documents=total_documents,
+        all_documents=all_documents
+    )
+
+
+# Audit logs
+@app.route("/admin/audit-logs")
+def audit_logs():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    if not is_admin():
+        return "Access Denied: Admins only.", 403
+
+    conn = get_db()
+
+    logs = conn.execute("""
+        SELECT audit_logs.id, audit_logs.action,
+               audit_logs.details, audit_logs.timestamp,
+               users.full_name, users.email
+        FROM audit_logs
+        LEFT JOIN users ON audit_logs.user_id = users.id
+        ORDER BY audit_logs.id DESC
+    """).fetchall()
+
+    conn.close()
+
+    return render_template("audit_logs.html", logs=logs)
+
+
+# Admin user-role management
+@app.route("/admin/manage-user/<int:user_id>", methods=["POST"])
+def manage_user(user_id):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    if not is_admin():
+        return "Access Denied: Admins only.", 403
+
+    new_role = request.form.get("role")
+
+    if new_role not in ("admin", "user"):
+        return "Invalid role.", 400
+
+    if user_id == session["user_id"]:
+        return "You cannot change your own admin role.", 403
+
+    conn = get_db()
+
+    target = conn.execute(
+        "SELECT id, role FROM users WHERE id = ?",
+        (user_id,)
+    ).fetchone()
+
+    if target is None:
+        conn.close()
+        return "User not found.", 404
+
+    if target["role"] == "admin" and new_role == "user":
+        admin_count = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+        ).fetchone()[0]
+
+        if admin_count <= 1:
+            conn.close()
+            return "At least one admin account must remain.", 400
+
+    conn.execute(
+        "UPDATE users SET role = ? WHERE id = ?",
+        (new_role, user_id)
+    )
+
+    conn.commit()
+    conn.close()
+
+    log_action(
+        "ROLE_CHANGE",
+        f"Admin changed user ID {user_id} role to {new_role}"
+    )
+
+    return redirect(url_for("admin_dashboard"))
 
 
 # Upload documents
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
-
     if "user_id" not in session:
         return redirect(url_for("login"))
 
     if request.method == "POST":
 
-        document_name = request.form.get("document_name", "").strip()
+        document_name = request.form.get(
+            "document_name", ""
+        ).strip()
+
         file = request.files.get("document")
 
         if not document_name or not file or not file.filename:
-            return "Please provide a document name and select a file."
+            return "Please provide a document name and select a file.", 400
 
         original_name = secure_filename(file.filename)
 
         if "." not in original_name:
-            return "Invalid file type."
+            return "Invalid file type.", 400
 
         extension = original_name.rsplit(".", 1)[1].lower()
 
         if extension not in ALLOWED_EXTENSIONS:
-            return "File type not allowed."
+            return "File type not allowed.", 400
 
         unique_filename = str(uuid.uuid4()) + "." + extension
 
@@ -431,32 +492,37 @@ def upload():
 
         file.save(file_path)
 
-        conn = get_db()
+        try:
+            conn = get_db()
 
-        conn.execute(
-            """
-            INSERT INTO documents (user_id, document_name, filename)
-            VALUES (?, ?, ?)
-            """,
-            (session["user_id"], document_name, unique_filename)
-        )
+            conn.execute("""
+                INSERT INTO documents
+                (user_id, document_name, filename)
+                VALUES (?, ?, ?)
+            """, (
+                session["user_id"],
+                document_name,
+                unique_filename
+            ))
 
-        conn.commit()
-        conn.close()
-        log_action(
-            "UPLOAD",
-            f"Uploaded document: {document_name}"
-        )
+            conn.commit()
+            conn.close()
+
+        except Exception:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise
+
+        log_action("UPLOAD", f"Uploaded document: {document_name}")
 
         return redirect(url_for("documents"))
 
     return render_template("upload.html")
 
 
-# My Documents with Search
+# My documents and search
 @app.route("/documents")
 def documents():
-
     if "user_id" not in session:
         return redirect(url_for("login"))
 
@@ -464,28 +530,25 @@ def documents():
 
     conn = get_db()
 
-    if search:
-
-        user_documents = conn.execute(
-            """
-            SELECT * FROM documents
-            WHERE user_id = ? AND document_name LIKE ?
-            ORDER BY upload_date DESC
-            """,
-            (session["user_id"], "%" + search + "%")
-        ).fetchall()
-
-    else:
-
-        user_documents = conn.execute(
-            """
-            SELECT * FROM documents
-            WHERE user_id = ?
-            ORDER BY upload_date DESC
-            """,
-            (session["user_id"],)
-        ).fetchall()
-
+    user_documents = conn.execute("""
+        SELECT DISTINCT d.*
+        FROM documents d
+        LEFT JOIN document_permissions p
+            ON d.id = p.document_id
+        WHERE (
+            d.user_id = ?
+            OR p.user_id = ?
+            OR ? = 'admin'
+        )
+        AND (? = '' OR d.document_name LIKE ?)
+        ORDER BY d.upload_date DESC
+    """, (
+        session["user_id"],
+        session["user_id"],
+        session.get("role", "user"),
+        search,
+        "%" + search + "%"
+    )).fetchall()
     conn.close()
 
     return render_template(
@@ -494,56 +557,159 @@ def documents():
         search=search
     )
 
+# Share a document with another user
+@app.route("/share/<int:document_id>", methods=["POST"])
+def share_document(document_id):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
 
-# Download user's own documents
+    email = request.form.get("email", "").strip().lower()
+
+    conn = get_db()
+
+    document = conn.execute("""
+        SELECT * FROM documents
+        WHERE id = ? AND user_id = ?
+    """, (document_id, session["user_id"])).fetchone()
+
+    if document is None:
+        conn.close()
+        return "Only the document owner can share it.", 403
+
+    recipient = conn.execute("""
+        SELECT * FROM users
+        WHERE LOWER(email) = ?
+    """, (email,)).fetchone()
+
+    if recipient is None:
+        conn.close()
+        return "User not found. They must register first.", 404
+
+    if recipient["id"] == session["user_id"]:
+        conn.close()
+        return "You already own this document.", 400
+
+    conn.execute("""
+        INSERT OR IGNORE INTO document_permissions
+        (document_id, user_id, granted_by)
+        VALUES (?, ?, ?)
+    """, (document_id, recipient["id"], session["user_id"]))
+
+    conn.commit()
+    conn.close()
+
+    log_action("SHARE", f"Shared document: {document['document_name']}")
+
+    return redirect(url_for("documents"))
+# User download
 @app.route("/download/<int:document_id>")
 def download_document(document_id):
-
     if "user_id" not in session:
         return redirect(url_for("login"))
 
     conn = get_db()
 
-    document = conn.execute(
-        """
-        SELECT * FROM documents
-        WHERE id = ? AND user_id = ?
-        """,
-        (document_id, session["user_id"])
-    ).fetchone()
+    document = conn.execute("""
+        SELECT d.*
+        FROM documents d
+        LEFT JOIN document_permissions p
+            ON d.id = p.document_id
+        WHERE d.id = ?
+          AND (
+              d.user_id = ?
+              OR p.user_id = ?
+              OR ? = 1
+          )
+    """, (
+        document_id,
+        session["user_id"],
+        session["user_id"],
+        1 if is_admin() else 0
+    )).fetchone()
 
     conn.close()
 
     if document is None:
-        return "Document not found."
+        return "Document not found.", 404
+
+    file_path = os.path.join(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"]
+    )
+
+    if not os.path.isfile(file_path):
+        return "Document file is unavailable.", 404
+
     log_action(
         "DOWNLOAD",
         f"Downloaded document: {document['document_name']}"
     )
+
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         document["filename"],
         as_attachment=True
     )
 
-
-# Admin Download Documents
-@app.route("/admin/download/<int:document_id>")
-def admin_download(document_id):
-
+# View documents
+@app.route("/view/<int:document_id>")
+def view_document(document_id):
     if "user_id" not in session:
         return redirect(url_for("login"))
 
     conn = get_db()
 
-    user = conn.execute(
-        "SELECT role FROM users WHERE id = ?",
-        (session["user_id"],)
-    ).fetchone()
+    document = conn.execute("""
+        SELECT DISTINCT d.*
+        FROM documents d
+        LEFT JOIN document_permissions p
+            ON d.id = p.document_id
+        WHERE d.id = ?
+          AND (
+              d.user_id = ?
+              OR p.user_id = ?
+              OR ? = 1
+          )
+    """, (
+        document_id,
+        session["user_id"],
+        session["user_id"],
+        1 if is_admin() else 0
+    )).fetchone()
 
-    if user is None or user["role"] != "admin":
-        conn.close()
-        return "Access Denied", 403
+    conn.close()
+
+    if document is None:
+        return "Document not found.", 404
+
+    file_path = os.path.join(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"]
+    )
+
+    if not os.path.isfile(file_path):
+        return "Document file is unavailable.", 404
+
+    log_action(
+        "VIEW",
+        f"Viewed document: {document['document_name']}"
+    )
+
+    return send_from_directory(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"],
+        as_attachment=False
+    )
+# Admin download
+@app.route("/admin/download/<int:document_id>")
+def admin_download(document_id):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    if not is_admin():
+        return "Access Denied.", 403
+
+    conn = get_db()
 
     document = conn.execute(
         "SELECT * FROM documents WHERE id = ?",
@@ -554,10 +720,20 @@ def admin_download(document_id):
 
     if document is None:
         return "Document not found.", 404
+
+    file_path = os.path.join(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"]
+    )
+
+    if not os.path.isfile(file_path):
+        return "Document file is unavailable.", 404
+
     log_action(
         "DOWNLOAD",
         f"Admin downloaded document: {document['document_name']}"
     )
+
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         document["filename"],
@@ -568,32 +744,26 @@ def admin_download(document_id):
 # Delete documents
 @app.route("/delete/<int:document_id>", methods=["POST"])
 def delete_document(document_id):
-
     if "user_id" not in session:
         return redirect(url_for("login"))
 
     conn = get_db()
 
-    document = conn.execute(
-        """
+    document = conn.execute("""
         SELECT * FROM documents
         WHERE id = ? AND user_id = ?
-        """,
-        (document_id, session["user_id"])
-    ).fetchone()
+    """, (
+        document_id,
+        session["user_id"]
+    )).fetchone()
 
     if document is None:
         conn.close()
-        return "Document not found."
-
-    file_path = os.path.join(
-        app.config["UPLOAD_FOLDER"],
-        document["filename"]
-    )
-
-    if os.path.exists(file_path):
-        os.remove(file_path)
-
+        return "Document not found.", 404
+    conn.execute("""
+        DELETE FROM document_permissions
+        WHERE document_id = ?
+    """, (document_id,))
     conn.execute(
         "DELETE FROM documents WHERE id = ? AND user_id = ?",
         (document_id, session["user_id"])
@@ -601,16 +771,26 @@ def delete_document(document_id):
 
     conn.commit()
     conn.close()
+
+    file_path = os.path.join(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"]
+    )
+
+    if os.path.isfile(file_path):
+        os.remove(file_path)
+
     log_action(
         "DELETE",
         f"Deleted document: {document['document_name']}"
     )
+
     return redirect(url_for("documents"))
 
 
+# Change password
 @app.route("/change-password", methods=["GET", "POST"])
 def change_password():
-
     if "user_id" not in session:
         return redirect(url_for("login"))
 
@@ -632,9 +812,11 @@ def change_password():
             session.clear()
             return redirect(url_for("login"))
 
-        if not check_password_hash(user["password_hash"], current_password):
+        if not check_password_hash(
+            user["password_hash"], current_password
+        ):
             conn.close()
-            flash("Your current password is incorrect.", "error")
+            flash("Current password is incorrect.", "error")
             return redirect(url_for("change_password"))
 
         if len(new_password) < 8:
@@ -647,45 +829,183 @@ def change_password():
             flash("New passwords do not match.", "error")
             return redirect(url_for("change_password"))
 
-        if current_password == new_password:
+        if new_password == current_password:
             conn.close()
-            flash("New password must be different from your current password.", "error")
+            flash("Choose a different password.", "error")
             return redirect(url_for("change_password"))
-
-        new_hash = generate_password_hash(new_password)
 
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
-            (new_hash, session["user_id"])
+            (
+                generate_password_hash(new_password),
+                session["user_id"]
+            )
         )
 
         conn.commit()
         conn.close()
-        log_action(
-            "PASSWORD_CHANGE",
-            "User changed their password"
-        )
+
+        log_action("PASSWORD_CHANGE", "User changed their password")
+
         flash("Password changed successfully!", "success")
         return redirect(url_for("change_password"))
 
     return render_template("change_password.html")
 
+
+# Request password reset
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+
+        email = request.form.get("email", "").strip().lower()
+
+        # Always show the same response to avoid revealing registered emails.
+        message = (
+            "If an account exists for that email, "
+            "password reset instructions will be provided."
+        )
+
+        conn = get_db()
+
+        user = conn.execute(
+            "SELECT id FROM users WHERE LOWER(email) = ?",
+            (email,)
+        ).fetchone()
+
+        reset_link = None
+
+        if user:
+            token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            expiry = (
+                datetime.now(timezone.utc) + timedelta(minutes=30)
+            ).isoformat()
+
+            conn.execute(
+                "UPDATE password_resets SET used = 1 WHERE user_id = ?",
+                (user["id"],)
+            )
+
+            conn.execute("""
+                INSERT INTO password_resets
+                (user_id, token_hash, expires_at)
+                VALUES (?, ?, ?)
+            """, (
+                user["id"],
+                token_hash,
+                expiry
+            ))
+
+            reset_link = url_for(
+                "reset_password",
+                token=token,
+                _external=True
+            )
+        if MAIL_USERNAME and MAIL_PASSWORD:
+            try:
+                send_reset_email(email, reset_link)
+            except Exception:
+                app.logger.exception("Password reset email could not be sent.")
+
+        conn.commit()
+        conn.close()
+
+        app.logger.info(message)
+
+        if reset_link and app.debug:
+            app.logger.warning("Development password reset link: %s", reset_link)
+
+        flash(message, "info")
+        return redirect(url_for("forgot_password"))
+
+    return render_template("forgot_password.html")
+
+
+# Reset password
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    conn = get_db()
+
+    reset = conn.execute("""
+        SELECT * FROM password_resets
+        WHERE token_hash = ? AND used = 0
+    """, (token_hash,)).fetchone()
+
+    if reset is None:
+        conn.close()
+        return "Invalid or expired reset link.", 400
+
+    expiry = datetime.fromisoformat(reset["expires_at"])
+
+    if datetime.now(timezone.utc) > expiry:
+        conn.close()
+        return "Invalid or expired reset link.", 400
+
+    if request.method == "POST":
+
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+
+        if len(password) < 8:
+            conn.close()
+            return render_template(
+                "reset_password.html",
+                token=token,
+                error="Password must contain at least 8 characters."
+            )
+
+        if password != confirm:
+            conn.close()
+            return render_template(
+                "reset_password.html",
+                token=token,
+                error="Passwords do not match."
+            )
+
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (
+                generate_password_hash(password),
+                reset["user_id"]
+            )
+        )
+
+        conn.execute(
+            "UPDATE password_resets SET used = 1 WHERE id = ?",
+            (reset["id"],)
+        )
+
+        conn.commit()
+        conn.close()
+
+        flash("Password reset successfully. Please log in.", "success")
+        return redirect(url_for("login"))
+
+    conn.close()
+
+    return render_template(
+        "reset_password.html",
+        token=token
+    )
+
+
 # Logout
 @app.route("/logout")
 def logout():
-
     if session.get("user_id"):
-        log_action(
-            "LOGOUT",
-            "User logged out successfully"
-        )
+        log_action("LOGOUT", "User logged out successfully")
 
     session.clear()
-
     return redirect(url_for("login"))
+
+
 # Initialize database
 create_table()
 
-# Run application locally
+
 if __name__ == "__main__":
     app.run(debug=True)

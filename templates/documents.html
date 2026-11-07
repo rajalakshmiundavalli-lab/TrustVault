@@ -1,4 +1,4 @@
-```html
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,18 +61,6 @@
             margin-bottom: 35px;
         }
 
-        .avatar {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            background: #dce6fa;
-            color: #18366d;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-        }
-
         .page-title {
             margin-bottom: 8px;
             font-size: 28px;
@@ -99,29 +87,20 @@
         }
 
         input {
-            padding: 12px 15px;
+            padding: 11px;
             border: 1px solid #dce2ec;
             border-radius: 8px;
             width: 100%;
-            outline: none;
-        }
-
-        input:focus {
-            border-color: #315ca8;
         }
 
         button, .upload-btn {
             background: #19376d;
             color: white;
             border: none;
-            padding: 12px 20px;
+            padding: 11px 16px;
             border-radius: 8px;
             cursor: pointer;
             text-decoration: none;
-        }
-
-        button:hover, .upload-btn:hover {
-            background: #284e91;
         }
 
         .card {
@@ -135,11 +114,11 @@
         table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 650px;
+            min-width: 750px;
         }
 
         th, td {
-            padding: 17px 12px;
+            padding: 15px 12px;
             text-align: left;
             border-bottom: 1px solid #edf0f5;
         }
@@ -150,10 +129,6 @@
             text-transform: uppercase;
         }
 
-        td {
-            font-size: 14px;
-        }
-
         .file-name {
             font-weight: bold;
             color: #243b64;
@@ -162,19 +137,50 @@
         .action {
             color: #2456a6;
             text-decoration: none;
-            margin-right: 12px;
             font-weight: bold;
+        }
+
+        .share-form {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .share-form input {
+            min-width: 150px;
         }
 
         .delete-btn {
             background: #fff0f0;
             color: #c03939;
-            padding: 8px 12px;
-            border-radius: 6px;
+            margin-top: 8px;
         }
 
-        .delete-btn:hover {
-            background: #ffe0e0;
+        .message {
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+
+        .message.success {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .message.error,
+        .message.danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .message.warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .message.info {
+            background: #dbeafe;
+            color: #1e40af;
         }
 
         .empty {
@@ -191,7 +197,6 @@
 
             .brand {
                 font-size: 15px;
-                margin-bottom: 30px;
             }
 
             .sidebar a {
@@ -213,10 +218,10 @@
 <div class="sidebar">
     <div class="brand">TrustVault.</div>
 
-    <a href="/dashboard">Dashboard</a>
-    <a href="/documents" class="active">My Documents</a>
-    <a href="/upload">Upload Files</a>
-    <a href="/logout">Logout</a>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('documents') }}" class="active">My Documents</a>
+    <a href="{{ url_for('upload') }}">Upload Files</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
 </div>
 
 <div class="main">
@@ -226,26 +231,42 @@
             <h2>Document Management</h2>
             <p style="color:#718096;">Manage your secure files</p>
         </div>
-
-        <div class="avatar">TU</div>
+        <div>TrustVault User</div>
     </div>
 
     <h1 class="page-title">My Documents</h1>
-    <p class="subtitle">View, search, download and manage your documents.</p>
+
+    <p class="subtitle">
+        View, search, download and manage your documents.
+    </p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="message {{ category }}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endwith %}
 
     <div class="toolbar">
 
-        <form class="search-form" method="GET" action="/documents">
+        <form class="search-form"
+              method="GET"
+              action="{{ url_for('documents') }}">
+
             <input
                 type="text"
                 name="search"
                 placeholder="Search documents..."
                 value="{{ search }}"
             >
+
             <button type="submit">Search</button>
         </form>
 
-        <a href="/upload" class="upload-btn">+ Upload Document</a>
+        <a href="{{ url_for('upload') }}" class="upload-btn">
+            + Upload Document
+        </a>
 
     </div>
 
@@ -276,13 +297,35 @@
 
                     <td>
                         <a class="action"
-                           href="/download/{{ document.id }}">
+                           href="{{ url_for('view_document', document_id=document.id) }}"
+                           target="_blank">
+                           View
+                        </a>
+                        <a class="action"
+                           href="{{ url_for('download_document', document_id=document.id) }}">
                             Download
                         </a>
 
+                        {% if document.user_id == session.get('user_id') %}
+
+                        <form class="share-form"
+                              method="POST"
+                              action="{{ url_for('share_document', document_id=document.id) }}">
+
+                            <input type="hidden"
+                                   name="csrf_token"
+                                   value="{{ csrf_token() }}">
+
+                            <input type="email"
+                                   name="email"
+                                   placeholder="Viewer email"
+                                   required>
+
+                            <button type="submit">Share</button>
+                        </form>
+
                         <form method="POST"
-                              action="/delete/{{ document.id }}"
-                              style="display:inline;"
+                              action="{{ url_for('delete_document', document_id=document.id) }}"
                               onsubmit="return confirm('Are you sure you want to delete this document?');">
 
                             <input type="hidden"
@@ -292,8 +335,9 @@
                             <button type="submit" class="delete-btn">
                                 Delete
                             </button>
-
                         </form>
+
+                        {% endif %}
                     </td>
                 </tr>
 
@@ -312,14 +356,7 @@
 
     </div>
 
-    <p style="margin-top:20px;">
-        <a href="/documents" style="color:#315ca8;">Clear Search</a>
-        &nbsp; | &nbsp;
-        <a href="/dashboard" style="color:#315ca8;">Back to Dashboard</a>
-    </p>
-
 </div>
 
 </body>
 </html>
-```

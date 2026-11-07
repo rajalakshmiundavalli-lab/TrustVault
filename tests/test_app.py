@@ -3,8 +3,11 @@ import os
 import sqlite3
 import io
 
-# Use a separate key for automated tests.
-os.environ.setdefault("TRUSTVAULT_SECRET_KEY", "test-secret-key-for-testing-only")
+# Separate key for automated tests
+os.environ.setdefault(
+    "TRUSTVAULT_SECRET_KEY",
+    "test-secret-key-for-testing-only"
+)
 
 import pytest
 import app as trustvault
@@ -13,6 +16,7 @@ import app as trustvault
 def connect_test_db(database_path):
     conn = sqlite3.connect(database_path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -71,6 +75,8 @@ def test_register_and_login(client):
 
     dashboard_response = client.get("/dashboard")
     assert dashboard_response.status_code == 200
+
+
 def test_duplicate_registration(client):
     register_user(client)
     response = register_user(client)
@@ -84,6 +90,8 @@ def test_duplicate_registration(client):
     conn.close()
 
     assert count == 1
+
+
 def test_dashboard_requires_login(client):
     response = client.get("/dashboard")
 
@@ -118,11 +126,12 @@ def test_upload_download_and_delete(client):
     assert document is not None
 
     download_response = client.get(
-    f"/download/{document['id']}"
+        f"/download/{document['id']}"
     )
     assert download_response.status_code == 200
 
     download_response.close()
+
     delete_response = client.post(
         f"/delete/{document['id']}"
     )
@@ -151,8 +160,9 @@ def test_admin_dashboard_access(client):
     login_user(client)
 
     response = client.get("/admin")
-
     assert response.status_code == 200
+
+
 def test_normal_user_cannot_access_admin(client):
     register_user(client)
     login_user(client)
@@ -161,10 +171,14 @@ def test_normal_user_cannot_access_admin(client):
 
     assert response.status_code == 403
     assert b"Access Denied" in response.data
+
+
 def test_user_cannot_download_another_users_document(client):
+    # Register and log in as User 1
     register_user(client, "user1@example.com")
     login_user(client, "user1@example.com")
 
+    # User 1 uploads a private document
     client.post(
         "/upload",
         data={
@@ -183,17 +197,22 @@ def test_user_cannot_download_another_users_document(client):
     ).fetchone()
     conn.close()
 
+    # Log out User 1
     client.get("/logout")
 
+    # Register and log in as User 2
     register_user(client, "user2@example.com")
     login_user(client, "user2@example.com")
 
+    # User 2 must not access User 1's document
     response = client.get(
         f"/download/{document['id']}"
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 404
     assert b"Document not found" in response.data
+
+
 def test_unsupported_file_type_is_rejected(client):
     register_user(client)
     login_user(client)
@@ -210,8 +229,9 @@ def test_unsupported_file_type_is_rejected(client):
         content_type="multipart/form-data"
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert b"File type not allowed." in response.data
+
 def test_password_change_rejects_wrong_current_password(client):
     register_user(client)
     login_user(client)
@@ -227,6 +247,8 @@ def test_password_change_rejects_wrong_current_password(client):
 
     assert response.status_code == 302
     assert "/change-password" in response.location
+
+
 def test_password_change_rejects_mismatched_passwords(client):
     register_user(client)
     login_user(client)
@@ -242,6 +264,8 @@ def test_password_change_rejects_mismatched_passwords(client):
 
     assert response.status_code == 302
     assert "/change-password" in response.location
+
+
 def test_password_change_rejects_short_password(client):
     register_user(client)
     login_user(client)
@@ -257,6 +281,8 @@ def test_password_change_rejects_short_password(client):
 
     assert response.status_code == 302
     assert "/change-password" in response.location
+
+
 def test_login_creates_audit_log(client):
     register_user(client)
     login_user(client)
