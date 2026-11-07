@@ -255,6 +255,7 @@ def manage_user(user_id):
     return redirect(url_for("admin_dashboard"))
 
 
+
 # Registration
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -262,11 +263,11 @@ def register():
     if request.method == "POST":
 
         name = request.form.get("full_name", "").strip()
-        email = request.form.get("email", "").strip()
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
 
-        if not name or not email or not password:
+        if not name or not email or not password or not confirm:
             return render_template(
                 "register.html",
                 error="All fields are required."
@@ -275,8 +276,14 @@ def register():
         if password != confirm:
             return render_template(
                 "register.html",
-                error="Passwords do not match."
+                error="Warning: Passwords do not match. Please try again."
             )
+
+        admin_email = os.environ.get(
+            "TRUSTVAULT_ADMIN_EMAIL", ""
+        ).strip().lower()
+
+        role = "admin" if email == admin_email and admin_email else "user"
 
         password_hash = generate_password_hash(password)
 
@@ -285,10 +292,11 @@ def register():
         try:
             conn.execute(
                 """
-                INSERT INTO users (full_name, email, password_hash)
-                VALUES (?, ?, ?)
+                INSERT INTO users
+                (full_name, email, password_hash, role)
+                VALUES (?, ?, ?, ?)
                 """,
-                (name, email, password_hash)
+                (name, email, password_hash, role)
             )
 
             conn.commit()
