@@ -10,7 +10,6 @@ import smtplib
 from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, send_from_directory, flash
@@ -18,25 +17,25 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
-
-
 app = Flask(__name__)
-
 app.secret_key = os.environ.get("TRUSTVAULT_SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("TRUSTVAULT_SECRET_KEY is not set!")
-
 csrf = CSRFProtect(app)
-
+# Added security headers
+@app.after_request
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 app.config["UPLOAD_FOLDER"] = os.path.join(app.root_path, "uploads")
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
-
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-
 DATABASE = os.path.join(app.root_path, "trustvault.db")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 MAIL_SERVER = "smtp.gmail.com"
-MAIL_PORT = 587
+MAIL_PORT = 58
 MAIL_USERNAME = os.environ.get("TRUSTVAULT_EMAIL")
 MAIL_PASSWORD = os.environ.get("TRUSTVAULT_EMAIL_PASSWORD")
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "png", "jpg", "jpeg"}
@@ -50,10 +49,8 @@ def hybrid_row(cursor):
     columns = [
         column.name for column in (cursor.description or [])
     ]
-
     def make_row(values):
         return HybridRow(zip(columns, values))
-
     return make_row
 class PostgresConnection:
     def __init__(self, connection):
@@ -81,10 +78,8 @@ def send_reset_email(email, reset_link):
     msg["Subject"] = "TrustVault - Password Reset"
     msg["From"] = MAIL_USERNAME
     msg["To"] = email
-
     msg.set_content(
         f"""Hello,
-
 We received a request to reset your TrustVault password.
 Use this link within 30 minutes:
 {reset_link}
@@ -104,7 +99,6 @@ def create_table():
         id_type = "SERIAL PRIMARY KEY"
     else:
         id_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
-
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS users (
             id {id_type},
@@ -182,7 +176,6 @@ def create_table():
     admin_email = os.environ.get(
         "TRUSTVAULT_ADMIN_EMAIL", ""
     ).strip().lower()
-
     if admin_email:
         conn.execute(
             "UPDATE users SET role = 'admin' WHERE LOWER(email) = ?",
@@ -260,6 +253,7 @@ def register():
                 role
             ))
             conn.commit()
+
         except (sqlite3.IntegrityError, psycopg.errors.UniqueViolation):
             conn.close()
             return render_template(
@@ -419,27 +413,39 @@ def manage_user(user_id):
 def upload():
     if "user_id" not in session:
         return redirect(url_for("login"))
+
     if request.method == "POST":
         document_name = request.form.get(
             "document_name", ""
         ).strip()
+
         file = request.files.get("document")
+
         if not document_name or not file or not file.filename:
             return "Please provide a document name and select a file.", 400
+
         original_name = secure_filename(file.filename)
+
         if "." not in original_name:
             return "Invalid file type.", 400
+
         extension = original_name.rsplit(".", 1)[1].lower()
+
         if extension not in ALLOWED_EXTENSIONS:
             return "File type not allowed.", 400
+
         unique_filename = str(uuid.uuid4()) + "." + extension
+
         file_path = os.path.join(
             app.config["UPLOAD_FOLDER"],
             unique_filename
         )
+
         file.save(file_path)
+
         try:
             conn = get_db()
+
             conn.execute("""
                 INSERT INTO documents
                 (user_id, document_name, filename)
@@ -449,22 +455,30 @@ def upload():
                 document_name,
                 unique_filename
             ))
+
             conn.commit()
             conn.close()
+
         except Exception:
             if os.path.exists(file_path):
                 os.remove(file_path)
             raise
+
         log_action("UPLOAD", f"Uploaded document: {document_name}")
         return redirect(url_for("documents"))
+
     return render_template("upload.html")
+
+
 # My documents and search
 @app.route("/documents")
 def documents():
     if "user_id" not in session:
         return redirect(url_for("login"))
+
     search = request.args.get("search", "").strip()
     conn = get_db()
+
     user_documents = conn.execute("""
         SELECT DISTINCT d.*
         FROM documents d
@@ -484,26 +498,34 @@ def documents():
         search,
         "%" + search + "%"
     )).fetchall()
+
     conn.close()
+
     return render_template(
         "documents.html",
         documents=user_documents,
         search=search
     )
+
+
 # Share a document with another user
 @app.route("/share/<int:document_id>", methods=["POST"])
 def share_document(document_id):
     if "user_id" not in session:
         return redirect(url_for("login"))
+
     email = request.form.get("email", "").strip().lower()
     conn = get_db()
+
     document = conn.execute("""
         SELECT * FROM documents
         WHERE id = ? AND user_id = ?
     """, (document_id, session["user_id"])).fetchone()
+
     if document is None:
         conn.close()
         return "Only the document owner can share it.", 403
+
     recipient = conn.execute("""
         SELECT * FROM users
         WHERE LOWER(email) = ?
@@ -512,24 +534,31 @@ def share_document(document_id):
     if recipient is None:
         conn.close()
         return "User not found. They must register first.", 404
+
     if recipient["id"] == session["user_id"]:
         conn.close()
         return "You already own this document.", 400
+
     conn.execute("""
     INSERT INTO document_permissions
     (document_id, user_id, granted_by)
     VALUES (?, ?, ?)
     ON CONFLICT (document_id, user_id) DO NOTHING
 """, (document_id, recipient["id"], session["user_id"]))
+
     conn.commit()
     conn.close()
+
     log_action("SHARE", f"Shared document: {document['document_name']}")
     return redirect(url_for("documents"))
+
+
 # User download
 @app.route("/download/<int:document_id>")
 def download_document(document_id):
     if "user_id" not in session:
         return redirect(url_for("login"))
+
     conn = get_db()
 
     document = conn.execute("""
@@ -573,6 +602,8 @@ def download_document(document_id):
         document["filename"],
         as_attachment=True
     )
+
+
 # View documents
 @app.route("/view/<int:document_id>")
 def view_document(document_id):
@@ -598,60 +629,81 @@ def view_document(document_id):
         session["user_id"],
         1 if is_admin() else 0
     )).fetchone()
+
     conn.close()
+
     if document is None:
         return "Document not found.", 404
+
     file_path = os.path.join(
         app.config["UPLOAD_FOLDER"],
         document["filename"]
     )
+
     if not os.path.isfile(file_path):
         return "Document file is unavailable.", 404
+
     log_action(
         "VIEW",
         f"Viewed document: {document['document_name']}"
     )
-    return send_from_directory(
-        app.config["UPLOAD_FOLDER"],
-        document["filename"],
-        as_attachment=False
-    )
-# Admin download
-@app.route("/admin/download/<int:document_id>")
-def admin_download(document_id):
-    if "user_id" not in session:
-        return redirect(url_for("login"))
-    if not is_admin():
-        return "Access Denied.", 403
-    conn = get_db()
-    document = conn.execute(
-        "SELECT * FROM documents WHERE id = ?",
-        (document_id,)
-    ).fetchone()
-    conn.close()
-    if document is None:
-        return "Document not found.", 404
-    file_path = os.path.join(
-        app.config["UPLOAD_FOLDER"],
-        document["filename"]
-    )
-    if not os.path.isfile(file_path):
-        return "Document file is unavailable.", 404
-    log_action(
-        "DOWNLOAD",
-        f"Admin downloaded document: {document['document_name']}"
-    )
+
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         document["filename"],
         as_attachment=True
     )
+
+
+# Admin download
+@app.route("/admin/download/<int:document_id>")
+def admin_download(document_id):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    if not is_admin():
+        return "Access Denied.", 403
+
+    conn = get_db()
+
+    document = conn.execute(
+        "SELECT * FROM documents WHERE id = ?",
+        (document_id,)
+    ).fetchone()
+
+    conn.close()
+
+    if document is None:
+        return "Document not found.", 404
+
+    file_path = os.path.join(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"]
+    )
+
+    if not os.path.isfile(file_path):
+        return "Document file is unavailable.", 404
+
+    log_action(
+        "DOWNLOAD",
+        f"Admin downloaded document: {document['document_name']}"
+    )
+
+    return send_from_directory(
+        app.config["UPLOAD_FOLDER"],
+        document["filename"],
+        as_attachment=True
+    )
+
+
 # Delete documents
 @app.route("/delete/<int:document_id>", methods=["POST"])
 def delete_document(document_id):
     if "user_id" not in session:
         return redirect(url_for("login"))
+
     conn = get_db()
+
     document = conn.execute("""
         SELECT * FROM documents
         WHERE id = ? AND user_id = ?
@@ -659,9 +711,11 @@ def delete_document(document_id):
         document_id,
         session["user_id"]
     )).fetchone()
+
     if document is None:
         conn.close()
         return "Document not found.", 404
+
     conn.execute("""
         DELETE FROM document_permissions
         WHERE document_id = ?
@@ -737,27 +791,34 @@ def change_password():
 def forgot_password():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
+
         # Always show the same response to avoid revealing registered emails.
         message = (
             "If an account exists for that email, "
             "password reset instructions will be provided."
         )
+
         conn = get_db()
+
         user = conn.execute(
             "SELECT id FROM users WHERE LOWER(email) = ?",
             (email,)
         ).fetchone()
+
         reset_link = None
+
         if user:
             token = secrets.token_urlsafe(32)
             token_hash = hashlib.sha256(token.encode()).hexdigest()
             expiry = (
                 datetime.now(timezone.utc) + timedelta(minutes=30)
             ).isoformat()
+
             conn.execute(
                 "UPDATE password_resets SET used = 1 WHERE user_id = ?",
                 (user["id"],)
             )
+
             conn.execute("""
                 INSERT INTO password_resets
                 (user_id, token_hash, expires_at)
@@ -767,43 +828,58 @@ def forgot_password():
                 token_hash,
                 expiry
             ))
+
             reset_link = url_for(
                 "reset_password",
                 token=token,
                 _external=True
             )
+
         if MAIL_USERNAME and MAIL_PASSWORD:
             try:
                 send_reset_email(email, reset_link)
             except Exception:
                 app.logger.exception("Password reset email could not be sent.")
+
         conn.commit()
         conn.close()
+
         app.logger.info(message)
+
         if reset_link and app.debug:
             app.logger.warning("Development password reset link: %s", reset_link)
+
         flash(message, "info")
         return redirect(url_for("forgot_password"))
+
     return render_template("forgot_password.html")
+
+
 # Reset password
 @app.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     conn = get_db()
+
     reset = conn.execute("""
         SELECT * FROM password_resets
         WHERE token_hash = ? AND used = 0
     """, (token_hash,)).fetchone()
+
     if reset is None:
         conn.close()
         return "Invalid or expired reset link.", 400
+
     expiry = datetime.fromisoformat(reset["expires_at"])
+
     if datetime.now(timezone.utc) > expiry:
         conn.close()
         return "Invalid or expired reset link.", 400
+
     if request.method == "POST":
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
+
         if len(password) < 8:
             conn.close()
             return render_template(
@@ -811,6 +887,7 @@ def reset_password(token):
                 token=token,
                 error="Password must contain at least 8 characters."
             )
+
         if password != confirm:
             conn.close()
             return render_template(
@@ -818,6 +895,7 @@ def reset_password(token):
                 token=token,
                 error="Passwords do not match."
             )
+
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
             (
