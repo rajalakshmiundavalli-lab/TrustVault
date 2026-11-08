@@ -47,10 +47,13 @@ class HybridRow(dict):
             return list(self.values())[key]
         return super().__getitem__(key)
 def hybrid_row(cursor):
-    columns = [column.name for column in cursor.description]
+    columns = [
+        column.name for column in (cursor.description or [])
+    ]
 
     def make_row(values):
         return HybridRow(zip(columns, values))
+
     return make_row
 class PostgresConnection:
     def __init__(self, connection):
